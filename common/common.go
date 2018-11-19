@@ -2,19 +2,7 @@ package common
 
 // const for zipkin
 const (
-	APMKwySeparator = "|"
-
-	// Endpoint to send Zipkin spans to.
-	apmHTTPEndpoint = ""
-
-	// Debug mode.
-	zipkinDebug = false
-
-	// same span
-	sameSpan = true
-
-	// make Tracer generate 128 bit traceID's for root spans.
-	traceID128Bit = true
+	APMKeySeparator = "|"
 )
 
 const (

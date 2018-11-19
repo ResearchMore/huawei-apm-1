@@ -1,7 +1,9 @@
-package util
+package utils
 
 import (
 	"testing"
+
+	"fmt"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -21,4 +23,13 @@ func TestEncryptionMD5(t *testing.T) {
 	str03 := "123abc"
 	md5Str03 := EncryptionMD5(str03)
 	assert.NotEqual(t, md5Str01, md5Str03)
+}
+
+func TestGetTracingID(t *testing.T) {
+	tracingID1 := UUID16()
+	tracingID2 := UUID16()
+	assert.NotEqual(t, tracingID1, tracingID2)
+}
+func TestGetTimeMillisecond(t *testing.T) {
+	fmt.Println(GetTimeMillisecond())
 }

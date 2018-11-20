@@ -11,8 +11,20 @@ import (
 	"strings"
 	"time"
 
+	"crypto/x509"
+
+	"io/ioutil"
+
+	"crypto/tls"
+
 	"github.com/go-chassis/huawei-apm/common"
+	"github.com/go-mesh/openlogging"
 )
+
+const defaultServerCrtFileName string = "ca.crt"
+
+const defaultClientCrtFileName string = "kubecfg.crt"
+const defaultClientKeyFileName string = "kubecfg_crypto.key"
 
 // EncryptionMD5 return md5ed string
 func EncryptionMD5(str string) string {
@@ -75,4 +87,54 @@ func GetLocalIP() string {
 		}
 	}
 	return ""
+}
+
+// GetCertPool load server
+func GetCertPool(path, fileName string) *x509.CertPool {
+
+	fileName = getFileName(fileName, defaultServerCrtFileName)
+	filePath := getFilePath(path, fileName)
+
+	caCert, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		openlogging.GetLogger().Errorf("read server.crt failed please check this it exist error : [%v]", err)
+		return nil
+	}
+	certPool := x509.NewCertPool()
+	certPool.AppendCertsFromPEM(caCert)
+
+	return certPool
+}
+
+// GetCertificate load client crt file and key file
+func GetCertificate(path, crt, key string) tls.Certificate {
+
+	crt = getFileName(crt, defaultClientCrtFileName)
+	key = getFileName(key, defaultClientKeyFileName)
+
+	crtFilePath := getFilePath(path, crt)
+	keyFilePath := getFilePath(path, key)
+
+	certificate, err := tls.LoadX509KeyPair(crtFilePath, keyFilePath)
+	if err != nil {
+		return tls.Certificate{}
+	}
+	return certificate
+}
+
+// getFilePath
+func getFilePath(path, fileName string) string {
+	path = strings.Replace(path, "\\", "/", -1)
+	if path[len(path)-1] == 47 {
+		return fmt.Sprintf("%s%s", path, fileName)
+	}
+	return fmt.Sprintf("%s/%s", path, fileName)
+}
+
+// getFileName
+func getFileName(filename, defaultName string) string {
+	if filename == "" {
+		return defaultName
+	}
+	return filename
 }

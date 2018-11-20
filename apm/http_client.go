@@ -1,4 +1,4 @@
-package worker
+package apm
 
 import (
 	"bytes"
@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-
-	"crypto/x509"
 
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-mesh/openlogging"
@@ -34,7 +32,7 @@ func httpDo(client *http.Client, message *common.TAgentMessage, url, projectID s
 
 	resp, err := client.Do(req)
 	if err != nil {
-		openlogging.GetLogger().Errorf("http call  collector  failed error : %v", err)
+		openlogging.GetLogger().Errorf("http call collector  failed error : %v", err)
 		return err
 	}
 	defer resp.Body.Close()
@@ -45,9 +43,5 @@ func httpDo(client *http.Client, message *common.TAgentMessage, url, projectID s
 		return errors.New("call collector failed")
 	}
 
-	return nil
-}
-
-func getCAs(path string) *x509.CertPool {
 	return nil
 }

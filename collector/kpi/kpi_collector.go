@@ -1,10 +1,12 @@
 package kpi
 
 import (
-	"github.com/go-chassis/huawei-apm/apm"
+	"github.com/go-chassis/huawei-apm/collector"
 	"github.com/go-chassis/huawei-apm/common"
 )
 
-func Collect(data common.KPICollectorMessage) error {
-	return apm.KpiApmCache.Set(data)
+// CollectKpi
+func CollectKpi(data common.KPICollectorMessage) error {
+
+	return collector.Collector.Apm[collector.Kpi_Collector_Key].Set(data)
 }

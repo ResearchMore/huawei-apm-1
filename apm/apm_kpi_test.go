@@ -87,7 +87,6 @@ func TestKpiApm_Set(t *testing.T) {
 }
 func TestAgent(t *testing.T) {
 	KpiApmCache.setToAgentMessage(&agentMsg)
-	agentMessages := KpiApmCache.getAgentMessageFormCache()
+	agentMessages := KpiApmCache.GetAgentCache()
 	assert.NotNil(t, agentMessages)
-	assert.NotNil(t, agentMessages[0])
 }

@@ -39,7 +39,7 @@ func (k *KpiApm) Set(data interface{}) error {
 	// if data not kpi type,return error
 	collector, ok := data.(common.KPICollectorMessage)
 	if !ok {
-		return NotMatchError
+		return KpiNotMatchError
 	}
 
 	var kpiCollector = collector
@@ -63,6 +63,15 @@ func (k *KpiApm) Set(data interface{}) error {
 // Send implement APMI send method , send kpi message to apm , when the kpi message failed to be send apm
 // will use cache to storing the kpi message , but the data will only send second time
 func (k *KpiApm) Send() error {
+	// if has old data sent the old data first and old data only send second time
+	amc := k.GetAgentCache()
+	if amc != nil {
+		err := httpDo(k.httpClient, amc, k.Url, k.ProjectID)
+		if err != nil {
+			openlogging.GetLogger().Errorf("send [%v] again  failed: ,error : [%v]", amc, err)
+		}
+	}
+	// send new data
 	k.kpiMutex.Lock()
 	items := k.getAllKpiMessageFromCache()
 	k.Delete("")
@@ -72,26 +81,31 @@ func (k *KpiApm) Send() error {
 		return errors.New(fmt.Sprintf("not kpi message need to send in cache , cache num is : %d", len(items)))
 	}
 
-	tAgentMessage := &common.TAgentMessage{
-		AgentContext: utils.UUID16(),
-		Messages:     make(map[string]map[int64][][]byte),
-	}
-
-	key := utils.GetAPMKey("istio", k.ProjectID, "default", "cse", k.ServerName)
 	kpiMessageBytes := [][]byte{}
-	dataMap := make(map[int64][][]byte, len(items))
 
 	for _, v := range items {
-
 		c := v.Object.(common.KPICollectorMessage)
 		tKpiMessage := getTKpiMessage(c)
 		d, _ := json.Marshal(tKpiMessage)
 		kpiMessageBytes = append(kpiMessageBytes, d)
 	}
 
+	if len(kpiMessageBytes) < 1 {
+		openlogging.GetLogger().Errorf("not kpi message need to send in cache , cache num is : %d", len(items))
+		return errors.New(fmt.Sprintf("not kpi message need to send in cache , cache num is : %d", len(items)))
+	}
+
+	key := utils.GetAPMKey("istio", k.ProjectID, "default", "cse", k.ServerName)
 	int64Key := utils.GetTimeMillisecond() - 60*1000
-	dataMap[int64Key] = kpiMessageBytes
-	tAgentMessage.Messages[key] = dataMap
+
+	tAgentMessage := &common.TAgentMessage{
+		AgentContext: utils.UUID16(),
+		Messages: map[string]map[int64][][]byte{
+			key: {
+				int64Key: kpiMessageBytes,
+			},
+		},
+	}
 
 	// send data to apm
 	err := httpDo(k.httpClient, tAgentMessage, k.Url, k.ProjectID)
@@ -101,26 +115,13 @@ func (k *KpiApm) Send() error {
 	return err
 }
 
-// getTKpiMessage method get tKpiMessage with kpi collector
-func getTKpiMessage(c common.KPICollectorMessage) common.TKpiMessage {
-	var totalLatency []byte
-	var totalErrorLatency []byte
-	if len(c.TotalLatencys) > 0 {
-		totalLatency, _ = json.Marshal(c.TotalLatencys)
+// GetAgentCache get agent message , the message is last time send failed
+func (k *KpiApm) GetAgentCache() *common.TAgentMessage {
+	d, ok := k.agentMessage.Get(common.SecondarySend)
+	if !ok {
+		return nil
 	}
-	if len(c.TotalErrorLatencys) > 0 {
-		totalErrorLatency, _ = json.Marshal(c.TotalErrorLatencys)
-	}
-	return common.TKpiMessage{
-		SourceResourceId:  c.SourceResourceId,
-		DestResourceId:    c.DestResourceId,
-		TransactionType:   c.TransactionType,
-		AppId:             c.AppId,
-		SrcTierName:       c.SrcTierName,
-		DestTierName:      c.DestTierName,
-		TotalErrorLatency: totalErrorLatency,
-		TotalLatency:      totalLatency,
-	}
+	return d.(*common.TAgentMessage)
 }
 
 // Delete delete tAgentMessage for tAgentMessageCache , when the key is empty will delete all cache data,
@@ -151,18 +152,29 @@ func (k *KpiApm) getAllKpiMessageFromCache() map[string]cache.Item {
 
 // setToAgentMessage  when send data to apm failed , use this method set
 func (k *KpiApm) setToAgentMessage(data *common.TAgentMessage) {
-	ms := k.getAgentMessageFormCache()
-	ms = append(ms, data)
-	k.agentMessage.Set(common.SecondarySend, ms, 0)
+	k.agentMessage.SetDefault(common.SecondarySend, data)
 }
 
-// getAgentMessageFormCache
-func (k *KpiApm) getAgentMessageFormCache() []*common.TAgentMessage {
-	d, ok := k.agentMessage.Get(common.SecondarySend)
-	if !ok {
-		return []*common.TAgentMessage{}
+// getTKpiMessage method get tKpiMessage with kpi collector
+func getTKpiMessage(c common.KPICollectorMessage) common.TKpiMessage {
+	var totalLatency []byte
+	var totalErrorLatency []byte
+	if len(c.TotalLatencys) > 0 {
+		totalLatency, _ = json.Marshal(c.TotalLatencys)
 	}
-	return d.([]*common.TAgentMessage)
+	if len(c.TotalErrorLatencys) > 0 {
+		totalErrorLatency, _ = json.Marshal(c.TotalErrorLatencys)
+	}
+	return common.TKpiMessage{
+		SourceResourceId:  c.SourceResourceId,
+		DestResourceId:    c.DestResourceId,
+		TransactionType:   c.TransactionType,
+		AppId:             c.AppId,
+		SrcTierName:       c.SrcTierName,
+		DestTierName:      c.DestTierName,
+		TotalErrorLatency: totalErrorLatency,
+		TotalLatency:      totalLatency,
+	}
 }
 
 // initCache
@@ -212,19 +224,16 @@ func getKpiCacheKey(sourceName, destName, transactionType string) string {
 	return utils.GetAPMKey(sourceName, destName, transactionType)
 }
 func init() {
-	ticker := time.NewTicker(common.DefaultBatchTime)
+	//ticker := time.NewTicker(common.DefaultBatchTime)
+	ticker := time.NewTicker(10 * time.Second)
 	go func() {
 		for range ticker.C {
 			if KpiApmCache != nil {
-				// if has old data sent the old data first and old data only send second time
-				ts := KpiApmCache.getAgentMessageFormCache()
-				if len(ts) > 0 {
-					KpiApmCache.agentMessage.Delete(common.SecondarySend)
-					for _, v := range ts {
-						err := httpDo(KpiApmCache.httpClient, v, KpiApmCache.Url, KpiApmCache.ProjectID)
-						openlogging.GetLogger().Errorf("send data again  failed: [%v],error : [%v]", v, err)
-					}
+				for _, v := range KpiApmCache.getAllKpiMessageFromCache() {
+					fmt.Printf("====>%+v\n", v)
 				}
+				continue
+
 				// send new data
 				KpiApmCache.Send()
 			} else {

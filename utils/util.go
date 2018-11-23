@@ -24,6 +24,7 @@ import (
 const defaultServerCrtFileName string = "ca.crt"
 
 const defaultClientCrtFileName string = "kubecfg.crt"
+
 const defaultClientKeyFileName string = "kubecfg_crypto.key"
 
 // EncryptionMD5 return md5ed string

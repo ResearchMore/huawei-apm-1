@@ -88,13 +88,13 @@ type Inventory struct {
 	// Props
 	Props map[string]interface{} `json:"props"`
 	// non-essential value
-	Ports string `json:"ports"`
+	Ports interface{} `json:"ports"`
 	// non-essential value
-	IPs     string `json:"ips"`
-	Tier    string `json:"tier"`
-	Created int64  `json:"created"`
-	Updated int64  `json:"updated"`
-	Deleted int64  `json:"deleted"`
+	IPs     interface{} `json:"ips"`
+	Tier    string      `json:"tier"`
+	Created int64       `json:"created"`
+	Updated int64       `json:"updated"`
+	Deleted int64       `json:"deleted"`
 }
 
 // KPICollectorMessage

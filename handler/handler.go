@@ -9,9 +9,11 @@ import (
 	"github.com/go-chassis/go-chassis/core/handler"
 	"github.com/go-chassis/go-chassis/core/invocation"
 	"github.com/go-chassis/go-chassis/pkg/runtime"
+	"github.com/go-chassis/huawei-apm/collector/inventory"
 	"github.com/go-chassis/huawei-apm/collector/kpi"
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-chassis/huawei-apm/pod"
+	"github.com/go-chassis/huawei-apm/utils"
 )
 
 // ApmName  name of huawei collector handler
@@ -72,7 +74,12 @@ func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb
 		message := getCollectorMessage(pod.GetPodName(), getDestResourceId(),
 			transactionType, runtime.App, runtime.ServiceName,
 			inv.MicroServiceName, totalLatency, totalErrorLatency)
-		kpi.Collect(message)
+		kpi.CollectKpi(message)
+
+		in := getNewInventory(runtime.HostName, utils.GetLocalIP(), runtime.App,
+			"", "display_name",
+			runtime.InstanceID, pod.GetContainerID(), runtime.App, 0, nil)
+		inventory.CollectInventory(in)
 		return cb(response)
 	}
 
@@ -92,6 +99,26 @@ func getCollectorMessage(sourceResourceID, destResourceID, transactionType,
 		DestTierName:      destTierName,
 		TotalLatency:      totalLatency,
 		TotalErrorLatency: totalErrorLatency,
+	}
+}
+
+// getNewInventory return new inventory
+func getNewInventory(hostname, ip, appName, serviceType,
+	displayName, instanceName, containerID, appID string, pid int,
+	Props map[string]interface{}) common.Inventory {
+
+	return common.Inventory{
+		Hostname:     hostname,
+		IP:           ip,
+		AppID:        appID,
+		AppName:      appName,
+		ServiceType:  serviceType,
+		DisplayName:  displayName,
+		InstanceName: instanceName,
+		ContainerID:  containerID,
+		Pid:          pid,
+		Props:        Props,
+		Created:      utils.GetTimeMillisecond(),
 	}
 }
 

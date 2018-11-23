@@ -12,10 +12,11 @@ import (
 
 	"time"
 
-	"github.com/go-chassis/go-chassis/core/config"
-	"github.com/go-chassis/go-chassis/pkg/runtime"
+	"sync"
+
+	"fmt"
+
 	"github.com/go-chassis/huawei-apm/common"
-	"github.com/go-chassis/huawei-apm/pod"
 	"github.com/go-chassis/huawei-apm/utils"
 	"github.com/go-mesh/openlogging"
 	"github.com/patrickmn/go-cache"
@@ -30,9 +31,10 @@ const InventoryCacheKey string = "inventory_apm_cache_key"
 type InventoryApm struct {
 	// if send apm failed set data to this
 	agentMessage   *cache.Cache
+	inventoryCache *cache.Cache
+	mutexInventory *sync.Mutex
 	httpClient     *http.Client
 	inventory      common.Inventory
-	inventoryCache *cache.Cache
 	Url            string
 	ProjectID      string
 	ServerName     string
@@ -43,7 +45,7 @@ type InventoryApm struct {
 func (i *InventoryApm) Set(data interface{}) error {
 	in, ok := data.(common.Inventory)
 	if !ok {
-		return errors.New("set data to inventory failed , because the type of date not common.Inventory")
+		return InventoryNotMatchError
 	}
 	var inventories []common.Inventory
 	iCache, ok := i.Get(InventoryCacheKey)
@@ -55,8 +57,22 @@ func (i *InventoryApm) Set(data interface{}) error {
 	return nil
 }
 func (i *InventoryApm) Send() error {
+	// if has old data in agent cache will sent it again
+	agent := InventoryApmCache.GetAgentCache()
+	if agent != nil {
+		err := httpDo(InventoryApmCache.httpClient, agent, InventoryApmCache.Url, InventoryApmCache.ProjectID)
+		if err != nil {
+			openlogging.GetLogger().Errorf("send [%v] again  failed: ,error : [%v]", agent, err)
+		}
+	}
+
 	var datas [][]byte
+
+	i.mutexInventory.Lock()
 	inventories, ok := i.Get(InventoryCacheKey)
+	i.Delete(InventoryCacheKey)
+	i.mutexInventory.Unlock()
+
 	if !ok {
 		openlogging.GetLogger().Error("not data need to send apm")
 		return errors.New("not data need to send apm")
@@ -65,7 +81,10 @@ func (i *InventoryApm) Send() error {
 		temp, _ := json.Marshal(v)
 		datas = append(datas, temp)
 	}
-
+	if len(datas) == 0 {
+		openlogging.GetLogger().Error("not data need to send apm")
+		return errors.New("not data need to send apm")
+	}
 	i.KeyString = utils.GetAPMKey("istio", i.ProjectID, "default", "cse", i.ServerName)
 	i.KeyInt64 = utils.GetTimeMillisecond() - 60*1000
 	tAgentMessage := &common.TAgentMessage{
@@ -76,7 +95,11 @@ func (i *InventoryApm) Send() error {
 			},
 		},
 	}
-	return httpDo(i.httpClient, tAgentMessage, i.Url, i.ProjectID)
+	err := httpDo(i.httpClient, tAgentMessage, i.Url, i.ProjectID)
+	if err != nil {
+		i.agentMessage.SetDefault(common.SecondarySend, tAgentMessage)
+	}
+	return err
 }
 
 // Delete delete inventory cache by key , when key is empty will delete all cache of inventory
@@ -86,6 +109,15 @@ func (i *InventoryApm) Delete(key string) {
 		return
 	}
 	i.inventoryCache.Delete(key)
+}
+
+// GetAgentCache get agent message , the message is last time send failed
+func (i *InventoryApm) GetAgentCache() *common.TAgentMessage {
+	d, ok := i.agentMessage.Get(common.SecondarySend)
+	if !ok {
+		return nil
+	}
+	return d.(*common.TAgentMessage)
 }
 
 // Get get tKpiMessage from cache
@@ -115,6 +147,7 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 		ProjectID:      projectID,
 		agentMessage:   initCache(),
 		inventoryCache: initCache(),
+		mutexInventory: &sync.Mutex{},
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
@@ -126,35 +159,20 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 	}
 }
 
-// NewInventory return new inventory
-func NewInventory(hostname, ip, appName, clusterKey, serviceType,
-	displayName, instanceName, containerID, appID string, pid int, Props map[string]interface{}) common.Inventory {
-
-	return common.Inventory{
-		Hostname:     hostname,
-		IP:           ip,
-		AppID:        appID,
-		AppName:      appName,
-		ClusterKey:   clusterKey,
-		ServiceType:  serviceType,
-		DisplayName:  displayName,
-		InstanceName: instanceName,
-		ContainerID:  containerID,
-		Pid:          pid,
-		Props:        Props,
-		Created:      utils.GetTimeMillisecond(),
-	}
-}
-
 func init() {
-	t := time.NewTimer(5 * time.Second)
+	//t := time.NewTicker(common.DefaultBatchTime)
+	t := time.NewTicker(10 * time.Second)
 	go func() {
 		for range t.C {
-			inventoryCache := NewInventory(runtime.HostName, utils.GetLocalIP(), runtime.App, "", config.GlobalDefinition.Cse.Service.Registry.Type,
-				"", runtime.InstanceID, pod.GetContainerID(), runtime.App, 0, nil)
-			continue
-			InventoryApmCache.Set(inventoryCache)
-			InventoryApmCache.Send()
+			if InventoryApmCache != nil {
+				// test
+				for _, v := range InventoryApmCache.inventoryCache.Items() {
+					fmt.Printf("====>%+v\n", v)
+				}
+				continue
+				// test
+				InventoryApmCache.Send()
+			}
 		}
 	}()
 }

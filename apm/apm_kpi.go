@@ -1,22 +1,21 @@
 package apm
 
 import (
-	"crypto/tls"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"sync"
-
-	"errors"
-	"fmt"
-
-	"encoding/json"
-
 	"time"
+
+	"crypto/tls"
+	"os"
 
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-chassis/huawei-apm/utils"
 	"github.com/go-mesh/openlogging"
-	cache "github.com/patrickmn/go-cache"
+	"github.com/patrickmn/go-cache"
 )
 
 // DefaultKPIUrl default url send kpi Message to collector
@@ -38,23 +37,31 @@ type KpiApm struct {
 // Set method set data to api cache
 func (k *KpiApm) Set(data interface{}) error {
 	// if data not kpi type,return error
-	kd, ok := data.(common.TKpiMessage)
+	collector, ok := data.(common.KPICollectorMessage)
 	if !ok {
 		return NotMatchError
 	}
 
-	var tkpimessages []common.TKpiMessage
-	cacheKey := getKpiCacheKey(kd.SrcTierName, kd.DestTierName, kd.TransactionType)
+	var kpiCollector = collector
+	cacheKey := getKpiCacheKey(collector.SrcTierName, collector.DestTierName, collector.TransactionType)
 
-	t, ok := k.Get(cacheKey)
+	temp, ok := k.Get(cacheKey)
 	if ok {
-		tkpimessages = t
+		kpiCollector = temp
+	}
+	if collector.TotalErrorLatency != 0 {
+		kpiCollector.TotalErrorLatencys = append(kpiCollector.TotalErrorLatencys, collector.TotalErrorLatency)
+	}
+	if collector.TotalLatency != 0 {
+		kpiCollector.TotalLatencys = append(kpiCollector.TotalLatencys, collector.TotalLatency)
 	}
 
-	tkpimessages = append(tkpimessages, kd)
-	k.kpiMessagesCaChe.Set(cacheKey, tkpimessages, 0)
+	k.kpiMessagesCaChe.Set(cacheKey, kpiCollector, 0)
 	return nil
 }
+
+// Send implement APMI send method , send kpi message to apm , when the kpi message failed to be send apm
+// will use cache to storing the kpi message , but the data will only send second time
 func (k *KpiApm) Send() error {
 	k.kpiMutex.Lock()
 	items := k.getAllKpiMessageFromCache()
@@ -70,12 +77,15 @@ func (k *KpiApm) Send() error {
 		Messages:     make(map[string]map[int64][][]byte),
 	}
 
-	key := utils.GetAPMKey("istio", k.ProjectID, "dafault", "cse", k.ServerName)
+	key := utils.GetAPMKey("istio", k.ProjectID, "default", "cse", k.ServerName)
 	kpiMessageBytes := [][]byte{}
 	dataMap := make(map[int64][][]byte, len(items))
 
 	for _, v := range items {
-		d, _ := json.Marshal(v.Object)
+
+		c := v.Object.(common.KPICollectorMessage)
+		tKpiMessage := getTKpiMessage(c)
+		d, _ := json.Marshal(tKpiMessage)
 		kpiMessageBytes = append(kpiMessageBytes, d)
 	}
 
@@ -86,36 +96,93 @@ func (k *KpiApm) Send() error {
 	// send data to apm
 	err := httpDo(k.httpClient, tAgentMessage, k.Url, k.ProjectID)
 	if err != nil {
-		k.setTOAgentMessage(tAgentMessage)
+		k.setToAgentMessage(tAgentMessage)
 	}
 	return err
 }
 
+// getTKpiMessage method get tKpiMessage with kpi collector
+func getTKpiMessage(c common.KPICollectorMessage) common.TKpiMessage {
+	var totalLatency []byte
+	var totalErrorLatency []byte
+	if len(c.TotalLatencys) > 0 {
+		totalLatency, _ = json.Marshal(c.TotalLatencys)
+	}
+	if len(c.TotalErrorLatencys) > 0 {
+		totalErrorLatency, _ = json.Marshal(c.TotalErrorLatencys)
+	}
+	return common.TKpiMessage{
+		SourceResourceId:  c.SourceResourceId,
+		DestResourceId:    c.DestResourceId,
+		TransactionType:   c.TransactionType,
+		AppId:             c.AppId,
+		SrcTierName:       c.SrcTierName,
+		DestTierName:      c.DestTierName,
+		TotalErrorLatency: totalErrorLatency,
+		TotalLatency:      totalLatency,
+	}
+}
+
+// Delete delete tAgentMessage for tAgentMessageCache , when the key is empty will delete all cache data,
+// key not empty will delete cache data by key
 func (k *KpiApm) Delete(key string) {
 	if key == "" {
-		k.kpiMessagesCaChe.DeleteExpired()
+		k.kpiMessagesCaChe.Flush()
+
 		return
 	}
 	k.kpiMessagesCaChe.Delete(key)
 }
 
-func NewKpiAPM(projectID, serverName, url, caPath string) *KpiApm {
-	if projectID == "" {
-		projectID = DefaultProjectID
+// Get get tKpiMessage from cache
+func (k *KpiApm) Get(key string) (common.KPICollectorMessage, bool) {
+	d, ok := k.kpiMessagesCaChe.Get(key)
+	if !ok {
+		return common.KPICollectorMessage{}, false
+	}
+	message, ok := d.(common.KPICollectorMessage)
+	return message, ok
+}
+
+// getAllKpiMessageFromCache method get all cache data form cache
+func (k *KpiApm) getAllKpiMessageFromCache() map[string]cache.Item {
+	return k.kpiMessagesCaChe.Items()
+}
+
+// setToAgentMessage  when send data to apm failed , use this method set
+func (k *KpiApm) setToAgentMessage(data *common.TAgentMessage) {
+	ms := k.getAgentMessageFormCache()
+	ms = append(ms, data)
+	k.agentMessage.Set(common.SecondarySend, ms, 0)
+}
+
+// getAgentMessageFormCache
+func (k *KpiApm) getAgentMessageFormCache() []*common.TAgentMessage {
+	d, ok := k.agentMessage.Get(common.SecondarySend)
+	if !ok {
+		return []*common.TAgentMessage{}
+	}
+	return d.([]*common.TAgentMessage)
+}
+
+// initCache
+func initCache() *cache.Cache { return cache.New(common.DefaultExpireTime, common.CleanupInterval) }
+
+// NewKpiAPM return new KpiAPM with projectID , server name , KpiUrl , caPath
+// when input params is empty will use default value.
+// e.g. projectID is empty , use default value is "default" , more default please see system const
+func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
+
+	projectID, isExist := os.LookupEnv(common.EnvProjectID)
+	if !isExist {
+		projectID = common.DefaultProjectID
 	}
 
-	if serverName == "" {
-		serverName = DefaultSDestination
-	}
+	serverName = utils.GetStringWithDefaultName(serverName, common.DefaultServerName)
+	kpiUrl = utils.GetStringWithDefaultName(kpiUrl, DefaultKPIUrl)
+	caPath = utils.GetStringWithDefaultName(caPath, common.DefaultCAPath)
 
-	if url == "" {
-		url = DefaultKPIUrl
-	}
-
-	if caPath == "" {
-		caPath = defaultCAPath
-	}
-	conn, err := NewConnection(DefaultKPIUrl)
+	conn, err := NewConnection(kpiUrl, projectID)
 
 	if err != nil {
 		openlogging.GetLogger().Errorf("get tcp conn failed err : %v", err)
@@ -123,7 +190,7 @@ func NewKpiAPM(projectID, serverName, url, caPath string) *KpiApm {
 
 	return &KpiApm{
 		ProjectID:        projectID,
-		Url:              url,
+		Url:              kpiUrl,
 		ServerName:       serverName,
 		kpiMessagesCaChe: initCache(),
 		agentMessage:     initCache(),
@@ -140,52 +207,19 @@ func NewKpiAPM(projectID, serverName, url, caPath string) *KpiApm {
 	}
 }
 
-// Get get tKpiMessage from cache
-func (k *KpiApm) Get(key string) ([]common.TKpiMessage, bool) {
-	d, ok := k.kpiMessagesCaChe.Get(key)
-	if !ok {
-		return []common.TKpiMessage{}, false
-	}
-	message, ok := d.([]common.TKpiMessage)
-	return message, ok
-}
-
-func (k *KpiApm) getAllKpiMessageFromCache() map[string]cache.Item {
-	return k.kpiMessagesCaChe.Items()
-}
-
-func initCache() *cache.Cache { return cache.New(DefaultExpireTime, CleanupInterval) }
-
 // getKpiCacheKey get kpi apmcache key use source name , dest name , TransactionType
 func getKpiCacheKey(sourceName, destName, transactionType string) string {
 	return utils.GetAPMKey(sourceName, destName, transactionType)
 }
-
-// setTOAgentMessage  when send data to apm failed , use this method set
-func (k *KpiApm) setTOAgentMessage(data *common.TAgentMessage) {
-	ms := k.getAgentMessageFormCache()
-	ms = append(ms, data)
-	k.agentMessage.Set(SecondarySend, ms, 0)
-}
-
-// getAgentMessageFormCache
-func (k *KpiApm) getAgentMessageFormCache() []*common.TAgentMessage {
-	d, ok := k.agentMessage.Get(SecondarySend)
-	if !ok {
-		return []*common.TAgentMessage{}
-	}
-	return d.([]*common.TAgentMessage)
-}
-
 func init() {
-	ticker := time.NewTicker(DefaultBatchTime)
+	ticker := time.NewTicker(common.DefaultBatchTime)
 	go func() {
 		for range ticker.C {
 			if KpiApmCache != nil {
-				// if has old data sent the old data first and old data only send data again
+				// if has old data sent the old data first and old data only send second time
 				ts := KpiApmCache.getAgentMessageFormCache()
 				if len(ts) > 0 {
-					KpiApmCache.agentMessage.Delete(SecondarySend)
+					KpiApmCache.agentMessage.Delete(common.SecondarySend)
 					for _, v := range ts {
 						err := httpDo(KpiApmCache.httpClient, v, KpiApmCache.Url, KpiApmCache.ProjectID)
 						openlogging.GetLogger().Errorf("send data again  failed: [%v],error : [%v]", v, err)

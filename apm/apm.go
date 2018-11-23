@@ -1,8 +1,6 @@
 package apm
 
 import (
-	"time"
-
 	"errors"
 )
 
@@ -13,19 +11,8 @@ var (
 // KpiApmCache cache of kpi , cache key use src name,dest name and transaction type
 var KpiApmCache *KpiApm
 
-const (
-	defaultCAPath    = "/var/paas/srv/kubernetes"
-	DefaultBatchTime = 60 * time.Second
-	DefaultProjectID = "default"
-	//DefaultExpireTime default expiry time is kept as 0
-	DefaultExpireTime = 0
-	// CleanupInterval default clean up time is kept as 0
-	CleanupInterval     = 0
-	DefaultClient       = "unknownClient"
-	DefaultSDestination = "unknownDestination"
-	// need to secondary transmission
-	SecondarySend = "SecondarySend"
-)
+// InventoryApmCache cache of inventory apm ,and the cache save the inventory when sent inventory to apm failed
+var InventoryApmCache *InventoryApm
 
 // APMI
 type APMI interface {
@@ -35,6 +22,14 @@ type APMI interface {
 }
 
 // Init init
-func Init(projectID, serverName, url, caPath string) {
-	KpiApmCache = NewKpiAPM(projectID, serverName, url, caPath)
+func Init(serverName, url, caPath string) {
+	//fmt.Println("====>1", runtime.InstanceID)
+	//fmt.Println("====>2", runtime.App)
+	//fmt.Println("====>3", runtime.HostName)
+	//fmt.Println("====>4", runtime.InstanceStatus)
+	//fmt.Println("====>5", runtime.ServiceID)
+	//fmt.Println("====>6", runtime.ServiceName)
+	//fmt.Println("====>7", runtime.Version)
+	KpiApmCache = NewKpiAPM(serverName, url, caPath)
+	InventoryApmCache = NewInventoryApm(serverName, url, caPath)
 }

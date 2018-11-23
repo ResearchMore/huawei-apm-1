@@ -3,14 +3,19 @@ package handler
 import (
 	"time"
 
+	"fmt"
+	"net/http"
+
 	"github.com/go-chassis/go-chassis/core/handler"
 	"github.com/go-chassis/go-chassis/core/invocation"
 	"github.com/go-chassis/go-chassis/pkg/runtime"
+	"github.com/go-chassis/huawei-apm/collector/kpi"
 	"github.com/go-chassis/huawei-apm/common"
+	"github.com/go-chassis/huawei-apm/pod"
 )
 
 // ApmName  name of huawei collector handler
-const ApmName = "collector-handler"
+const ApmName = "apm-handler"
 
 //  APMHandler collector struct
 type APMHandler struct{}
@@ -31,28 +36,66 @@ func (a *APMHandler) Name() string {
 func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb invocation.ResponseCallBack) {
 	// start time
 	start := time.Now()
-	chain.Next(inv, func(response *invocation.Response) (err error) {
-		err = cb(response)
-		var totalErrorLatency, totalLatency byte
-		if response.Status < 200 || response.Status > 300 {
-			totalErrorLatency += byte(time.Since(start).Nanoseconds() / 1e6)
+	transactionType := inv.Protocol
+	var callbackFunc func(*invocation.Response, time.Time) error
+	finish := make(chan *invocation.Response, 1)
+
+	chain.Next(inv, func(response *invocation.Response) error {
+		err := response.Err
+		select {
+		case finish <- response:
+		default:
 		}
-		getTKpiMesssage(inv.SourceServiceID, inv.SchemaID, inv.Protocol, runtime.App, inv.SourceMicroService,
-			inv.MicroServiceName, totalLatency, totalErrorLatency)
-		return
+		return err
+		//return cb(response)
 	})
+
+	callbackFunc = func(response *invocation.Response, t time.Time) error {
+		var totalErrorLatency, totalLatency int64
+		if response.Err != nil {
+			totalErrorLatency = time.Since(t).Nanoseconds() / 1e6
+		} else {
+			if transactionType == "rpc" {
+				totalLatency = time.Since(t).Nanoseconds() / 1e6
+			} else {
+				transactionType = fmt.Sprintf("%s%s", inv.Endpoint, inv.URLPathFormat)
+
+				resp, _ := response.Result.(*http.Response)
+				if resp.StatusCode < 200 || resp.StatusCode > 300 {
+					totalErrorLatency = time.Since(t).Nanoseconds() / 1e6
+				} else {
+					totalLatency = time.Since(t).Nanoseconds() / 1e6
+				}
+			}
+		}
+
+		message := getCollectorMessage(pod.GetPodName(), getDestResourceId(),
+			transactionType, runtime.App, runtime.ServiceName,
+			inv.MicroServiceName, totalLatency, totalErrorLatency)
+		kpi.Collect(message)
+		return cb(response)
+	}
+
+	callbackFunc(<-finish, start)
 }
 
-// getTKpiMesssage get kpi message
-func getTKpiMesssage(sourceResourceID, destResourceID, transactionType,
+// getCollectorMessage get kpi message
+func getCollectorMessage(sourceResourceID, destResourceID, transactionType,
 	appID, srcTierName, destTierName string,
-	totalLatency, totalErrorLatency byte) common.TKpiMessage {
-	return common.TKpiMessage{
-		SourceResourceId: sourceResourceID,
-		DestResourceId:   destResourceID,
-		TransactionType:  transactionType,
-		AppId:            appID,
-		SrcTierName:      srcTierName,
-		DestTierName:     destTierName,
+	totalLatency, totalErrorLatency int64) common.KPICollectorMessage {
+	return common.KPICollectorMessage{
+		SourceResourceId:  sourceResourceID,
+		DestResourceId:    destResourceID,
+		TransactionType:   transactionType,
+		AppId:             appID,
+		SrcTierName:       srcTierName,
+		DestTierName:      destTierName,
+		TotalLatency:      totalLatency,
+		TotalErrorLatency: totalErrorLatency,
 	}
+}
+
+// getDestResourceId get pod name of endpoint , default name  "unknownDestination"
+func getDestResourceId() string {
+	return common.DefaultSDestination
 }

@@ -90,10 +90,10 @@ func GetLocalIP() string {
 }
 
 // GetCertPool load server
-func GetCertPool(path, fileName string) *x509.CertPool {
+func GetCertPool(path, crt string) *x509.CertPool {
 
-	fileName = getFileName(fileName, defaultServerCrtFileName)
-	filePath := getFilePath(path, fileName)
+	crt = GetStringWithDefaultName(crt, defaultServerCrtFileName)
+	filePath := getFilePath(path, crt)
 
 	caCert, err := ioutil.ReadFile(filePath)
 	if err != nil {
@@ -109,8 +109,8 @@ func GetCertPool(path, fileName string) *x509.CertPool {
 // GetCertificate load client crt file and key file
 func GetCertificate(path, crt, key string) tls.Certificate {
 
-	crt = getFileName(crt, defaultClientCrtFileName)
-	key = getFileName(key, defaultClientKeyFileName)
+	crt = GetStringWithDefaultName(crt, defaultClientCrtFileName)
+	key = GetStringWithDefaultName(key, defaultClientKeyFileName)
 
 	crtFilePath := getFilePath(path, crt)
 	keyFilePath := getFilePath(path, key)
@@ -127,12 +127,14 @@ func getFilePath(path, fileName string) string {
 	path = strings.Replace(path, "\\", "/", -1)
 	if path[len(path)-1] == 47 {
 		return fmt.Sprintf("%s%s", path, fileName)
+	} else if path[len(path)-4:] == ".crt" || path[len(path)-4:] == ".key" {
+		return path
 	}
 	return fmt.Sprintf("%s/%s", path, fileName)
 }
 
-// getFileName
-func getFileName(filename, defaultName string) string {
+// GetStringWithDefaultName
+func GetStringWithDefaultName(filename, defaultName string) string {
 	if filename == "" {
 		return defaultName
 	}

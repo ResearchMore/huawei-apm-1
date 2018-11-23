@@ -3,11 +3,18 @@ package apm
 import (
 	"net"
 
+	"fmt"
+
+	"strings"
+
 	"github.com/go-mesh/openlogging"
 )
 
 // NewConnection return tcp connect
-func NewConnection(url string) (*net.TCPConn, error) {
+func NewConnection(url, projectID string) (*net.TCPConn, error) {
+	if projectID != "" && strings.Contains(url, "/%s") {
+		url = fmt.Sprintf(url, projectID)
+	}
 	tcpAddr, err := net.ResolveTCPAddr("tcp", url)
 	if err != nil {
 		openlogging.GetLogger().Errorf("resolve collector  tcp addr failed , error : %v , Url is : %s", err, url)

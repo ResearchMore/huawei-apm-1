@@ -1,16 +1,14 @@
 package apm
 
 import (
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"sync"
-	"time"
-
-	"crypto/tls"
 	"os"
+	"sync"
 
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-chassis/huawei-apm/utils"
@@ -137,12 +135,14 @@ func (k *KpiApm) Delete(key string) {
 
 // Get get tKpiMessage from cache
 func (k *KpiApm) Get(key string) (common.KPICollectorMessage, bool) {
+	var reply common.KPICollectorMessage
+
 	d, ok := k.kpiMessagesCaChe.Get(key)
 	if !ok {
-		return common.KPICollectorMessage{}, false
+		return reply, false
 	}
-	message, ok := d.(common.KPICollectorMessage)
-	return message, ok
+	reply, ok = d.(common.KPICollectorMessage)
+	return reply, ok
 }
 
 // getAllKpiMessageFromCache method get all cache data form cache
@@ -222,23 +222,4 @@ func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
 // getKpiCacheKey get kpi apmcache key use source name , dest name , TransactionType
 func getKpiCacheKey(sourceName, destName, transactionType string) string {
 	return utils.GetAPMKey(sourceName, destName, transactionType)
-}
-func init() {
-	//ticker := time.NewTicker(common.DefaultBatchTime)
-	ticker := time.NewTicker(10 * time.Second)
-	go func() {
-		for range ticker.C {
-			if KpiApmCache != nil {
-				for _, v := range KpiApmCache.getAllKpiMessageFromCache() {
-					fmt.Printf("====>%+v\n", v)
-				}
-				continue
-
-				// send new data
-				KpiApmCache.Send()
-			} else {
-
-			}
-		}
-	}()
 }

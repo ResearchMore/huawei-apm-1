@@ -7,6 +7,5 @@ import (
 
 // CollectKpi
 func CollectKpi(data common.KPICollectorMessage) error {
-
-	return collector.Collector.Apm[collector.Kpi_Collector_Key].Set(data)
+	return apm_collector.Collector.Apm[apm_collector.Kpi_Collector_Key].Set(data)
 }

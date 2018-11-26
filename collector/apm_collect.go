@@ -1,4 +1,4 @@
-package collector
+package apm_collector
 
 import (
 	"time"
@@ -30,10 +30,14 @@ func init() {
 		Apm: make(map[string]apm.APMI, 2),
 	}
 	t := time.NewTicker(common.DefaultBatchTime)
-	go func() {
-		for range t.C {
-			Collector.Apm[Kpi_Collector_Key].Send()
-			Collector.Apm[Inventory_Collector_Key].Send()
-		}
-	}()
+	// make to goroutine to send kpi and inventory data
+	for k := range Collector.Apm {
+		go func() {
+			for range t.C {
+				if Collector.Apm[k] != nil {
+					Collector.Apm[k].Send()
+				}
+			}
+		}()
+	}
 }

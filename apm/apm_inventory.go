@@ -10,11 +10,7 @@ import (
 
 	"errors"
 
-	"time"
-
 	"sync"
-
-	"fmt"
 
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-chassis/huawei-apm/utils"
@@ -34,7 +30,6 @@ type InventoryApm struct {
 	inventoryCache *cache.Cache
 	mutexInventory *sync.Mutex
 	httpClient     *http.Client
-	inventory      common.Inventory
 	Url            string
 	ProjectID      string
 	ServerName     string
@@ -58,9 +53,9 @@ func (i *InventoryApm) Set(data interface{}) error {
 }
 func (i *InventoryApm) Send() error {
 	// if has old data in agent cache will sent it again
-	agent := InventoryApmCache.GetAgentCache()
+	agent := i.GetAgentCache()
 	if agent != nil {
-		err := httpDo(InventoryApmCache.httpClient, agent, InventoryApmCache.Url, InventoryApmCache.ProjectID)
+		err := httpDo(i.httpClient, agent, i.Url, i.ProjectID)
 		if err != nil {
 			openlogging.GetLogger().Errorf("send [%v] again  failed: ,error : [%v]", agent, err)
 		}
@@ -124,7 +119,7 @@ func (i *InventoryApm) GetAgentCache() *common.TAgentMessage {
 func (k *InventoryApm) Get(key string) ([]common.Inventory, bool) {
 	d, ok := k.inventoryCache.Get(key)
 	if !ok {
-		return []common.Inventory{}, false
+		return nil, false
 	}
 	message, ok := d.([]common.Inventory)
 	return message, ok
@@ -157,22 +152,4 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 			},
 		},
 	}
-}
-
-func init() {
-	//t := time.NewTicker(common.DefaultBatchTime)
-	t := time.NewTicker(10 * time.Second)
-	go func() {
-		for range t.C {
-			if InventoryApmCache != nil {
-				// test
-				for _, v := range InventoryApmCache.inventoryCache.Items() {
-					fmt.Printf("====>%+v\n", v)
-				}
-				continue
-				// test
-				InventoryApmCache.Send()
-			}
-		}
-	}()
 }

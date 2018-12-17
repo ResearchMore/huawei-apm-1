@@ -5,6 +5,7 @@ import (
 
 	"fmt"
 
+	"github.com/go-mesh/openlogging"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -32,4 +33,12 @@ func TestGetTracingID(t *testing.T) {
 }
 func TestGetTimeMillisecond(t *testing.T) {
 	fmt.Println(GetTimeMillisecond())
+}
+
+func TestGetCertificate(t *testing.T) {
+	cs, err := getCertificate("D:/test-ca/kubernetes", "", "", "")
+	if err != nil {
+		openlogging.GetLogger().Error(err.Error())
+	}
+	fmt.Println(cs)
 }

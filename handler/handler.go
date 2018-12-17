@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chassis/go-chassis/core/config"
 	"github.com/go-chassis/go-chassis/core/handler"
 	"github.com/go-chassis/go-chassis/core/invocation"
 	"github.com/go-chassis/go-chassis/pkg/runtime"
+	"github.com/go-chassis/huawei-apm/collector"
 	"github.com/go-chassis/huawei-apm/collector/inventory"
 	"github.com/go-chassis/huawei-apm/collector/kpi"
 	"github.com/go-chassis/huawei-apm/common"
@@ -24,6 +26,9 @@ type APMHandler struct{}
 
 func init() {
 	handler.RegisterHandler(ApmName, New)
+
+	apm_collector.CreateDefaultCollect()
+	apm_collector.StartCollector()
 }
 func New() handler.Handler {
 	return &APMHandler{}
@@ -77,7 +82,7 @@ func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb
 		kpi.CollectKpi(message)
 
 		in := getNewInventory(runtime.HostName, utils.GetLocalIP(), runtime.App,
-			"", "display_name",
+			config.GlobalDefinition.Cse.Service.Registry.Type, "display_name",
 			runtime.InstanceID, pod.GetContainerID(), runtime.App, 0, nil)
 		inventory.CollectInventory(in)
 		return cb(response)

@@ -17,15 +17,16 @@ import (
 
 	"crypto/tls"
 
+	"github.com/go-chassis/go-chassis/security"
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-mesh/openlogging"
 )
 
-const defaultServerCrtFileName string = "ca.crt"
+const defaultCACrtFileName string = "ca.crt"
 
-const defaultClientCrtFileName string = "kubecfg.crt"
+const defaultK8sCrtFileName string = "kubecfg.crt"
 
-const defaultClientKeyFileName string = "kubecfg_crypto.key"
+const defaultK8sKeyFileName string = "kubecfg_crypto.key"
 
 // EncryptionMD5 return md5ed string
 func EncryptionMD5(str string) string {
@@ -90,41 +91,115 @@ func GetLocalIP() string {
 	return ""
 }
 
-// GetCertPool load server
-func GetCertPool(path, crt string) *x509.CertPool {
+// GetX509CACertPool load server
+func GetX509CACertPool(path, crt string) *x509.CertPool {
 
-	crt = GetStringWithDefaultName(crt, defaultServerCrtFileName)
-	filePath := getFilePath(path, crt)
+	//crt = GetStringWithDefaultName(crt, defaultCACrtFileName)
+
+	filePath := getFilePath(path, crt, defaultK8sCrtFileName)
 
 	caCert, err := ioutil.ReadFile(filePath)
 	if err != nil {
 		openlogging.GetLogger().Errorf("read server.crt failed please check this it exist error : [%v]", err)
 		return nil
 	}
+
 	certPool := x509.NewCertPool()
 	certPool.AppendCertsFromPEM(caCert)
 
 	return certPool
 }
 
+// getX509CACertPool use X509 to get CA Cert pool
+func getX509CACertPool(path, crt string) (*x509.CertPool, error) {
+
+	//crt = GetStringWithDefaultName(crt, defaultCACrtFileName)
+
+	filePath := getFilePath(path, crt, defaultK8sCrtFileName)
+
+	caCert, err := ioutil.ReadFile(filePath)
+	if err != nil {
+		openlogging.GetLogger().Errorf("read server.crt failed please check this it exist error : [%v]", err)
+		return nil, err
+	}
+	certPool := x509.NewCertPool()
+	certPool.AppendCertsFromPEM(caCert)
+
+	return certPool, nil
+}
+
 // GetCertificate load client crt file and key file
 func GetCertificate(path, crt, key string) tls.Certificate {
-
-	crt = GetStringWithDefaultName(crt, defaultClientCrtFileName)
-	key = GetStringWithDefaultName(key, defaultClientKeyFileName)
-
-	crtFilePath := getFilePath(path, crt)
-	keyFilePath := getFilePath(path, key)
+	getCertificate(path, crt, "", key)
+	crtFilePath := getFilePath(path, crt, defaultK8sCrtFileName)
+	keyFilePath := getFilePath(path, key, defaultK8sKeyFileName)
 
 	certificate, err := tls.LoadX509KeyPair(crtFilePath, keyFilePath)
 	if err != nil {
+		openlogging.GetLogger().Errorf("get client failed err is : %v\n", err)
 		return tls.Certificate{}
 	}
+
 	return certificate
 }
 
+// getCertificate load client crt file and key file
+func getCertificate(path, crt, ca, key string) ([]tls.Certificate, error) {
+	// get ca ,kub ctr file ,k8s key file
+	//	caFilePath := getFilePath(path, ca, defaultCACrtFileName)
+	crtFilePath := getFilePath(path, crt, defaultK8sCrtFileName)
+	keyFilePath := getFilePath(path, key, defaultK8sKeyFileName)
+	// 证书读取
+	crtContent, err := ioutil.ReadFile(crtFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("read cert file %s failed", crtFilePath)
+	}
+	keyContent, err := ioutil.ReadFile(keyFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("read key file %s failed", keyFilePath)
+	}
+	//caCrtContent, err := ioutil.ReadFile(caFilePath)
+	//if err != nil {
+	//	return nil, fmt.Errorf("read key file %s failed", keyFilePath)
+	//}
+	// test
+	reply, err := DecryptKey(keyContent, crtContent)
+	fmt.Println("reply  ==>", reply)
+	fmt.Println("err ===>", err)
+	fmt.Println("")
+	return nil, nil
+	//test
+	fmt.Println(crtContent, keyContent)
+	return []tls.Certificate{}, nil
+}
+
+// 解密
+func DecryptKey(ciphertext, key []byte) ([]byte, error) {
+	cipher, err := security.GetCipherNewFunc("aes")
+	if err != nil {
+		return nil, err
+	}
+	aes := cipher()
+	s, err := aes.Decrypt(string(ciphertext))
+	fmt.Println("====>", s, "\n====>", err)
+
+	return []byte(s), err
+}
+
+func GetTLSConfig(path, CAFile string) (*tls.Config, error) {
+	pool, err := getX509CACertPool(path, CAFile)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		ClientCAs: pool,
+	}, nil
+}
+
 // getFilePath
-func getFilePath(path, fileName string) string {
+func getFilePath(path, fileName, defaultFileName string) string {
+	fileName = GetStringWithDefaultName(fileName, defaultFileName)
+	path = GetStringWithDefaultName(path, common.DefaultCAPath)
 	path = strings.Replace(path, "\\", "/", -1)
 	if path[len(path)-1] == 47 {
 		return fmt.Sprintf("%s%s", path, fileName)

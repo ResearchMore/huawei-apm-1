@@ -17,7 +17,7 @@ import (
 )
 
 // DefaultKPIUrl default url send kpi Message to collector
-const DefaultKPIUrl = "https://elbIp:8923/%s/kpi/istio"
+const DefaultKPIUrl = "/svcstg/ats/v1/%s/kpi/istio"
 
 // KpiApm implement APMI by forwarding kpi
 type KpiApm struct {
@@ -64,9 +64,10 @@ func (k *KpiApm) Send() error {
 	// if has old data sent the old data first and old data only send second time
 	amc := k.GetAgentCache()
 	if amc != nil {
+		k.agentMessage.Flush()
 		err := httpDo(k.httpClient, amc, k.Url, k.ProjectID)
 		if err != nil {
-			openlogging.GetLogger().Errorf("send [%v] again  failed: ,error : [%v]", amc, err)
+			openlogging.GetLogger().Errorf("send data again  failed: ,error : [%v]", err)
 		}
 	}
 	// send new data
@@ -75,7 +76,7 @@ func (k *KpiApm) Send() error {
 	k.Delete("")
 	k.kpiMutex.Unlock()
 	if len(items) < 1 {
-		openlogging.GetLogger().Errorf("not kpi message need to send in cache , cache num is : %d", len(items))
+		//openlogging.GetLogger().Warnf("not kpi message need to send in cache , cache num is : %d", len(items))
 		return errors.New(fmt.Sprintf("not kpi message need to send in cache , cache num is : %d", len(items)))
 	}
 
@@ -89,7 +90,7 @@ func (k *KpiApm) Send() error {
 	}
 
 	if len(kpiMessageBytes) < 1 {
-		openlogging.GetLogger().Errorf("not kpi message need to send in cache , cache num is : %d", len(items))
+		openlogging.GetLogger().Warnf("not kpi message need to send in cache , cache num is : %d", len(items))
 		return errors.New(fmt.Sprintf("not kpi message need to send in cache , cache num is : %d", len(items)))
 	}
 
@@ -127,7 +128,6 @@ func (k *KpiApm) GetAgentCache() *common.TAgentMessage {
 func (k *KpiApm) Delete(key string) {
 	if key == "" {
 		k.kpiMessagesCaChe.Flush()
-
 		return
 	}
 	k.kpiMessagesCaChe.Delete(key)
@@ -211,7 +211,8 @@ func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
 		httpClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					RootCAs:      utils.GetCertPool(caPath, ""),
+					ClientAuth: tls.RequireAndVerifyClientCert,
+					//RootCAs:            utils.GetX509CACertPool(caPath, ""),
 					Certificates: []tls.Certificate{utils.GetCertificate(caPath, "", "")},
 				},
 			},

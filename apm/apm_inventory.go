@@ -12,6 +12,8 @@ import (
 
 	"sync"
 
+	"time"
+
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-chassis/huawei-apm/utils"
 	"github.com/go-mesh/openlogging"
@@ -19,7 +21,7 @@ import (
 )
 
 // DefaultKPIUrl default url send kpi Message to collector
-const DefaultInventoryUrl = "https://elbIp:8923/%s/inventory/istio"
+const DefaultInventoryUrl = "/svcstg/ats/v1/%s/inventory/istio"
 
 // InventoryCacheKey key for inventory cache key
 const InventoryCacheKey string = "inventory_apm_cache_key"
@@ -49,15 +51,17 @@ func (i *InventoryApm) Set(data interface{}) error {
 	}
 	inventories = append(inventories, in)
 	i.inventoryCache.SetDefault(InventoryCacheKey, inventories)
+
 	return nil
 }
 func (i *InventoryApm) Send() error {
 	// if has old data in agent cache will sent it again
 	agent := i.GetAgentCache()
 	if agent != nil {
+		i.agentMessage.Flush()
 		err := httpDo(i.httpClient, agent, i.Url, i.ProjectID)
 		if err != nil {
-			openlogging.GetLogger().Errorf("send [%v] again  failed: ,error : [%v]", agent, err)
+			openlogging.GetLogger().Errorf("send data again  failed: ,error : [%v]", err)
 		}
 	}
 
@@ -69,7 +73,7 @@ func (i *InventoryApm) Send() error {
 	i.mutexInventory.Unlock()
 
 	if !ok {
-		openlogging.GetLogger().Error("not data need to send apm")
+		//openlogging.GetLogger().Warn("not data need to send apm")
 		return errors.New("not data need to send apm")
 	}
 	for _, v := range inventories {
@@ -77,7 +81,7 @@ func (i *InventoryApm) Send() error {
 		datas = append(datas, temp)
 	}
 	if len(datas) == 0 {
-		openlogging.GetLogger().Error("not data need to send apm")
+		openlogging.GetLogger().Warn("not data need to send apm")
 		return errors.New("not data need to send apm")
 	}
 	i.KeyString = utils.GetAPMKey("istio", i.ProjectID, "default", "cse", i.ServerName)
@@ -144,9 +148,11 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 		inventoryCache: initCache(),
 		mutexInventory: &sync.Mutex{},
 		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
-					RootCAs:      utils.GetCertPool(caPath, ""),
+					ClientAuth:   tls.RequireAndVerifyClientCert,
+					RootCAs:      utils.GetX509CACertPool(caPath, ""),
 					Certificates: []tls.Certificate{utils.GetCertificate(caPath, "", "")},
 				},
 			},

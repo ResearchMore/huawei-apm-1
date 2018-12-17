@@ -5,7 +5,6 @@ import (
 
 	"net/http"
 
-	"crypto/tls"
 	"os"
 
 	"errors"
@@ -139,7 +138,10 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 	inventoryUrl = utils.GetStringWithDefaultName(inventoryUrl, DefaultInventoryUrl)
 	caPath = utils.GetStringWithDefaultName(caPath, common.DefaultCAPath)
 	serverName = utils.GetStringWithDefaultName(serverName, common.DefaultServerName)
-
+	tlsConfig, err := utils.GetTLSConfig(caPath, "", "", "")
+	if err != nil {
+		return nil
+	}
 	return &InventoryApm{
 		ServerName:     serverName,
 		Url:            inventoryUrl,
@@ -150,11 +152,7 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 		httpClient: &http.Client{
 			Timeout: 30 * time.Second,
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					ClientAuth:   tls.RequireAndVerifyClientCert,
-					RootCAs:      utils.GetX509CACertPool(caPath, ""),
-					Certificates: []tls.Certificate{utils.GetCertificate(caPath, "", "")},
-				},
+				TLSClientConfig: tlsConfig,
 			},
 		},
 	}

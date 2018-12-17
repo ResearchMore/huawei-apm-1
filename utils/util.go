@@ -5,6 +5,7 @@ import (
 	"crypto/md5"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -13,8 +14,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	"errors"
 
 	"github.com/go-chassis/go-chassis/security"
 	"github.com/go-chassis/huawei-apm/common"
@@ -64,6 +63,7 @@ func GetTimeMillisecond() int64 {
 func GetHostname() string {
 	hostname, err := os.Hostname()
 	if err != nil {
+		openlogging.GetLogger().Errorf("get hostname failed err:[%v]", err)
 		return ""
 	}
 	return hostname
@@ -90,35 +90,33 @@ func GetLocalIP() string {
 	return ""
 }
 
-// GetX509CACertPool load server
-func GetX509CACertPool(path, crt string) *x509.CertPool {
-
-	//crt = GetStringWithDefaultName(crt, defaultCACrtFileName)
-
-	filePath := getFilePath(path, crt, defaultK8sCrtFileName)
-
-	caCert, err := ioutil.ReadFile(filePath)
+// GetTLSConfig  get https access  certificate config
+func GetTLSConfig(path, ca, kubecrt, kubekey string) (*tls.Config, error) {
+	ca = getFilePath(path, ca, defaultCACrtFileName)
+	kubecrt = getFilePath(path, kubecrt, defaultK8sCrtFileName)
+	kubekey = getFilePath(path, kubekey, defaultK8sKeyFileName)
+	pool, err := getX509CACertPool(path, ca)
 	if err != nil {
-		openlogging.GetLogger().Errorf("read server.crt failed please check this it exist error : [%v]", err)
-		return nil
+		return nil, err
 	}
-
-	certPool := x509.NewCertPool()
-	certPool.AppendCertsFromPEM(caCert)
-
-	return certPool
+	certificates, err := getCertificate(kubecrt, kubekey)
+	if err != nil {
+		return nil, err
+	}
+	return &tls.Config{
+		ClientCAs:    pool,
+		Certificates: certificates,
+	}, nil
 }
 
 // getX509CACertPool use X509 to get CA Cert pool
-func getX509CACertPool(path, crt string) (*x509.CertPool, error) {
+func getX509CACertPool(path, ca string) (*x509.CertPool, error) {
 
-	//crt = GetStringWithDefaultName(crt, defaultCACrtFileName)
-
-	filePath := getFilePath(path, crt, defaultK8sCrtFileName)
+	filePath := getFilePath(path, ca, defaultCACrtFileName)
 
 	caCert, err := ioutil.ReadFile(filePath)
 	if err != nil {
-		openlogging.GetLogger().Errorf("read server.crt failed please check this it exist error : [%v]", err)
+		openlogging.GetLogger().Errorf("read ca failed please check this it exist error : [%v]", err)
 		return nil, err
 	}
 	certPool := x509.NewCertPool()
@@ -127,49 +125,28 @@ func getX509CACertPool(path, crt string) (*x509.CertPool, error) {
 	return certPool, nil
 }
 
-// GetCertificate load client crt file and key file
-func GetCertificate(path, crt, key string) tls.Certificate {
-	getCertificate(path, crt, "", key)
-	crtFilePath := getFilePath(path, crt, defaultK8sCrtFileName)
-	keyFilePath := getFilePath(path, key, defaultK8sKeyFileName)
-
-	certificate, err := tls.LoadX509KeyPair(crtFilePath, keyFilePath)
-	if err != nil {
-		openlogging.GetLogger().Errorf("get client failed err is : %v\n", err)
-		return tls.Certificate{}
-	}
-
-	return certificate
-}
-
 // getCertificate load client crt file and key file
-func getCertificate(path, crt, ca, key string) ([]tls.Certificate, error) {
-	// get ca ,kub ctr file ,k8s key file
-	crtFilePath := getFilePath(path, crt, defaultK8sCrtFileName)
-	keyFilePath := getFilePath(path, key, defaultK8sKeyFileName)
-	// 证书读取
-	crtContent, err := ioutil.ReadFile(crtFilePath)
+func getCertificate(kubeCrt, kubeKey string) ([]tls.Certificate, error) {
+	// read file
+	crtContent, err := ioutil.ReadFile(kubeCrt)
 	if err != nil {
-		return nil, fmt.Errorf("read cert file %s failed", crtFilePath)
+		return nil, fmt.Errorf("read kubeCrt file %s failed", kubeCrt)
 	}
-	keyContent, err := ioutil.ReadFile(keyFilePath)
+	keyContent, err := ioutil.ReadFile(kubeKey)
 	if err != nil {
-		return nil, fmt.Errorf("read key file %s failed", keyFilePath)
+		return nil, fmt.Errorf("read kubeKey file %s failed", kubeKey)
+	}
+	decryptData, err := decryptKey(keyContent)
+	cer, err := tls.X509KeyPair(crtContent, decryptData)
+	if err != nil {
+		return nil, err
 	}
 
-	// test
-	reply, err := DecryptKey(keyContent, crtContent)
-	fmt.Println("reply  ==>", reply)
-	fmt.Println("err ===>", err)
-	fmt.Println("")
-	return nil, nil
-	//test
-	fmt.Println(crtContent, keyContent)
-	return []tls.Certificate{}, nil
+	return []tls.Certificate{cer}, nil
 }
 
-// 解密
-func DecryptKey(ciphertext []byte) ([]byte, error) {
+// decryptKey decrypt kubecfg_crypto.key file
+func decryptKey(ciphertext []byte) ([]byte, error) {
 	cipher, err := security.GetCipherNewFunc("aes")
 
 	if err != nil {
@@ -177,21 +154,12 @@ func DecryptKey(ciphertext []byte) ([]byte, error) {
 	}
 	aes := cipher()
 	if aes == nil {
-		openlogging.GetLogger().Errorf("nil  of aes ")
-		return nil, errors.New("aes is nil")
+		err := errors.New("use plugin func to get aes failed")
+		openlogging.GetLogger().Error(err.Error())
+		return nil, err
 	}
 	s, err := aes.Decrypt(string(ciphertext))
 	return []byte(s), err
-}
-
-func GetTLSConfig(path, CAFile string) (*tls.Config, error) {
-	pool, err := getX509CACertPool(path, CAFile)
-	if err != nil {
-		return nil, err
-	}
-	return &tls.Config{
-		ClientCAs: pool,
-	}, nil
 }
 
 // getFilePath

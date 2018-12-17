@@ -1,11 +1,9 @@
 package apm
 
 import (
-	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"os"
 	"sync"
@@ -22,7 +20,6 @@ const DefaultKPIUrl = "/svcstg/ats/v1/%s/kpi/istio"
 // KpiApm implement APMI by forwarding kpi
 type KpiApm struct {
 	kpiMutex         *sync.Mutex
-	tcpConn          *net.TCPConn
 	httpClient       *http.Client
 	kpiMessagesCaChe *cache.Cache
 	// if send apm failed set data to this
@@ -194,12 +191,11 @@ func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
 	kpiUrl = utils.GetStringWithDefaultName(kpiUrl, DefaultKPIUrl)
 	caPath = utils.GetStringWithDefaultName(caPath, common.DefaultCAPath)
 
-	conn, err := NewConnection(kpiUrl, projectID)
-
+	tlsConfig, err := utils.GetTLSConfig(caPath, "", "", "")
 	if err != nil {
-		openlogging.GetLogger().Errorf("get tcp conn failed err : %v", err)
+		openlogging.GetLogger().Error("get tls config failed")
+		return nil
 	}
-
 	return &KpiApm{
 		ProjectID:        projectID,
 		Url:              kpiUrl,
@@ -207,14 +203,9 @@ func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
 		kpiMessagesCaChe: initCache(),
 		agentMessage:     initCache(),
 		kpiMutex:         &sync.Mutex{},
-		tcpConn:          conn,
 		httpClient: &http.Client{
 			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					ClientAuth: tls.RequireAndVerifyClientCert,
-					//RootCAs:            utils.GetX509CACertPool(caPath, ""),
-					Certificates: []tls.Certificate{utils.GetCertificate(caPath, "", "")},
-				},
+				TLSClientConfig: tlsConfig,
 			},
 		},
 	}

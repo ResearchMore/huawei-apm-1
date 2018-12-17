@@ -3,19 +3,18 @@ package utils
 
 import (
 	"crypto/md5"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"net"
 	"os"
 	"strings"
 	"time"
 
-	"crypto/x509"
-
-	"io/ioutil"
-
-	"crypto/tls"
+	"errors"
 
 	"github.com/go-chassis/go-chassis/security"
 	"github.com/go-chassis/huawei-apm/common"
@@ -146,7 +145,6 @@ func GetCertificate(path, crt, key string) tls.Certificate {
 // getCertificate load client crt file and key file
 func getCertificate(path, crt, ca, key string) ([]tls.Certificate, error) {
 	// get ca ,kub ctr file ,k8s key file
-	//	caFilePath := getFilePath(path, ca, defaultCACrtFileName)
 	crtFilePath := getFilePath(path, crt, defaultK8sCrtFileName)
 	keyFilePath := getFilePath(path, key, defaultK8sKeyFileName)
 	// 证书读取
@@ -158,10 +156,7 @@ func getCertificate(path, crt, ca, key string) ([]tls.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("read key file %s failed", keyFilePath)
 	}
-	//caCrtContent, err := ioutil.ReadFile(caFilePath)
-	//if err != nil {
-	//	return nil, fmt.Errorf("read key file %s failed", keyFilePath)
-	//}
+
 	// test
 	reply, err := DecryptKey(keyContent, crtContent)
 	fmt.Println("reply  ==>", reply)
@@ -174,15 +169,18 @@ func getCertificate(path, crt, ca, key string) ([]tls.Certificate, error) {
 }
 
 // 解密
-func DecryptKey(ciphertext, key []byte) ([]byte, error) {
+func DecryptKey(ciphertext []byte) ([]byte, error) {
 	cipher, err := security.GetCipherNewFunc("aes")
+
 	if err != nil {
 		return nil, err
 	}
 	aes := cipher()
+	if aes == nil {
+		openlogging.GetLogger().Errorf("nil  of aes ")
+		return nil, errors.New("aes is nil")
+	}
 	s, err := aes.Decrypt(string(ciphertext))
-	fmt.Println("====>", s, "\n====>", err)
-
 	return []byte(s), err
 }
 

@@ -1,16 +1,14 @@
 package handler
 
 import (
-	"time"
-
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/go-chassis/go-chassis/core/config"
 	"github.com/go-chassis/go-chassis/core/handler"
 	"github.com/go-chassis/go-chassis/core/invocation"
 	"github.com/go-chassis/go-chassis/pkg/runtime"
-	"github.com/go-chassis/huawei-apm/collector"
 	"github.com/go-chassis/huawei-apm/collector/inventory"
 	"github.com/go-chassis/huawei-apm/collector/kpi"
 	"github.com/go-chassis/huawei-apm/common"
@@ -26,9 +24,6 @@ type APMHandler struct{}
 
 func init() {
 	handler.RegisterHandler(ApmName, New)
-
-	apm_collector.CreateDefaultCollect()
-	apm_collector.StartCollector()
 }
 func New() handler.Handler {
 	return &APMHandler{}
@@ -66,7 +61,6 @@ func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb
 				totalLatency = time.Since(t).Nanoseconds() / 1e6
 			} else {
 				transactionType = fmt.Sprintf("%s%s", inv.Endpoint, inv.URLPathFormat)
-
 				resp, _ := response.Result.(*http.Response)
 				if resp.StatusCode < 200 || resp.StatusCode > 300 {
 					totalErrorLatency = time.Since(t).Nanoseconds() / 1e6
@@ -76,14 +70,15 @@ func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb
 			}
 		}
 
-		message := getCollectorMessage(pod.GetPodName(), getDestResourceId(),
+		kpiCollectorMessage := getKPIMessage(pod.GetPodName(), getDestResourceId(),
 			transactionType, runtime.App, runtime.ServiceName,
 			inv.MicroServiceName, totalLatency, totalErrorLatency)
-		kpi.CollectKpi(message)
+		kpi.CollectKpi(kpiCollectorMessage)
 
-		in := getNewInventory(runtime.HostName, utils.GetLocalIP(), runtime.App,
+		in := getInventoryMessage(runtime.HostName, utils.GetLocalIP(), runtime.App,
 			config.GlobalDefinition.Cse.Service.Registry.Type, "display_name",
-			runtime.InstanceID, pod.GetContainerID(), runtime.App, 0, nil)
+			runtime.InstanceID, pod.GetContainerID(), runtime.App, config.MicroserviceDefinition.ServiceDescription.Name, 0)
+
 		inventory.CollectInventory(in)
 		return cb(response)
 	}
@@ -91,8 +86,8 @@ func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb
 	callbackFunc(<-finish, start)
 }
 
-// getCollectorMessage get kpi message
-func getCollectorMessage(sourceResourceID, destResourceID, transactionType,
+// getKPIMessage get kpi message
+func getKPIMessage(sourceResourceID, destResourceID, transactionType,
 	appID, srcTierName, destTierName string,
 	totalLatency, totalErrorLatency int64) common.KPICollectorMessage {
 	return common.KPICollectorMessage{
@@ -104,26 +99,31 @@ func getCollectorMessage(sourceResourceID, destResourceID, transactionType,
 		DestTierName:      destTierName,
 		TotalLatency:      totalLatency,
 		TotalErrorLatency: totalErrorLatency,
+		SpanType:          common.INTERMEDIATE,
 	}
 }
 
-// getNewInventory return new inventory
-func getNewInventory(hostname, ip, appName, serviceType,
-	displayName, instanceName, containerID, appID string, pid int,
-	Props map[string]interface{}) common.Inventory {
+// getInventoryMessage return new inventory
+func getInventoryMessage(hostname, ip, appName, serviceType,
+	displayName, instanceName, containerID, appID, namespaceName string, pid int) common.Inventory {
 
 	return common.Inventory{
-		Hostname:     hostname,
-		IP:           ip,
-		AppID:        appID,
-		AppName:      appName,
-		ServiceType:  serviceType,
-		DisplayName:  displayName,
-		InstanceName: instanceName,
-		ContainerID:  containerID,
-		Pid:          pid,
-		Props:        Props,
-		Created:      utils.GetTimeMillisecond(),
+		Hostname:      hostname,
+		IP:            ip,
+		AgentID:       "",
+		AppName:       appName,
+		ClusterKey:    "",
+		ServiceType:   serviceType,
+		DisplayName:   displayName,
+		InstanceName:  instanceName,
+		ContainerID:   containerID,
+		Pid:           pid,
+		AppID:         appID,
+		Ports:         "",
+		IPs:           "",
+		Tier:          "",
+		NamespaceName: namespaceName,
+		Created:       utils.GetTimeMillisecond(),
 	}
 }
 

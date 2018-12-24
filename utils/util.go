@@ -3,19 +3,14 @@ package utils
 
 import (
 	"crypto/md5"
-	"crypto/tls"
-	"crypto/x509"
-	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"math/rand"
 	"net"
 	"os"
 	"strings"
 	"time"
 
-	"github.com/go-chassis/go-chassis/security"
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-mesh/openlogging"
 )
@@ -88,78 +83,6 @@ func GetLocalIP() string {
 		}
 	}
 	return ""
-}
-
-// GetTLSConfig  get https access  certificate config
-func GetTLSConfig(path, ca, kubecrt, kubekey string) (*tls.Config, error) {
-	ca = getFilePath(path, ca, defaultCACrtFileName)
-	kubecrt = getFilePath(path, kubecrt, defaultK8sCrtFileName)
-	kubekey = getFilePath(path, kubekey, defaultK8sKeyFileName)
-	pool, err := getX509CACertPool(path, ca)
-	if err != nil {
-		return nil, err
-	}
-	certificates, err := getCertificate(kubecrt, kubekey)
-	if err != nil {
-		return nil, err
-	}
-	return &tls.Config{
-		ClientCAs:    pool,
-		Certificates: certificates,
-	}, nil
-}
-
-// getX509CACertPool use X509 to get CA Cert pool
-func getX509CACertPool(path, ca string) (*x509.CertPool, error) {
-
-	filePath := getFilePath(path, ca, defaultCACrtFileName)
-
-	caCert, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		openlogging.GetLogger().Errorf("read ca failed please check this it exist error : [%v]", err)
-		return nil, err
-	}
-	certPool := x509.NewCertPool()
-	certPool.AppendCertsFromPEM(caCert)
-
-	return certPool, nil
-}
-
-// getCertificate load client crt file and key file
-func getCertificate(kubeCrt, kubeKey string) ([]tls.Certificate, error) {
-	// read file
-	crtContent, err := ioutil.ReadFile(kubeCrt)
-	if err != nil {
-		return nil, fmt.Errorf("read kubeCrt file %s failed", kubeCrt)
-	}
-	keyContent, err := ioutil.ReadFile(kubeKey)
-	if err != nil {
-		return nil, fmt.Errorf("read kubeKey file %s failed", kubeKey)
-	}
-	decryptData, err := decryptKey(keyContent)
-	cer, err := tls.X509KeyPair(crtContent, decryptData)
-	if err != nil {
-		return nil, err
-	}
-
-	return []tls.Certificate{cer}, nil
-}
-
-// decryptKey decrypt kubecfg_crypto.key file
-func decryptKey(ciphertext []byte) ([]byte, error) {
-	cipher, err := security.GetCipherNewFunc("aes")
-
-	if err != nil {
-		return nil, err
-	}
-	aes := cipher()
-	if aes == nil {
-		err := errors.New("use plugin func to get aes failed")
-		openlogging.GetLogger().Error(err.Error())
-		return nil, err
-	}
-	s, err := aes.Decrypt(string(ciphertext))
-	return []byte(s), err
 }
 
 // getFilePath

@@ -3,7 +3,9 @@ package apm_collector
 import (
 	"time"
 
+	"github.com/go-chassis/go-chassis/core/config"
 	"github.com/go-chassis/huawei-apm/apm"
+	"github.com/go-mesh/openlogging"
 )
 
 const (
@@ -15,7 +17,7 @@ const (
 var Collector Collect
 
 type Collect struct {
-	Apm map[string]apm.APMI
+	Apm map[string]apm.APM
 }
 
 // CreateDefaultCollect use default value to create default apm collector
@@ -24,13 +26,19 @@ func CreateDefaultCollect() {
 }
 
 // CreateCollect create collector
-func CreateCollect(serverName, kpiUrl, caPath string) {
-	Collector.Apm[Kpi_Collector_Key] = apm.NewKpiAPM(serverName, kpiUrl, caPath)
-	Collector.Apm[Inventory_Collector_Key] = apm.NewInventoryApm(serverName, kpiUrl, caPath)
+func CreateCollect(serverName, url, caPath string) {
+	Collector.Apm[Kpi_Collector_Key] = apm.NewKpiAPM(serverName, url, "")
+	Collector.Apm[Inventory_Collector_Key] = apm.NewInventoryApm(serverName, url, "")
 }
 
 // StartCollector when you init collect will start collector
-func StartCollector() {
+func StartCollector(serverName, url, caPath string) {
+	if !config.GlobalDefinition.Cse.APM.Enable {
+		openlogging.GetLogger().Warn("apm collect not enable")
+		return
+	}
+	openlogging.GetLogger().Warn("apm collect enable ,starting")
+	CreateCollect(serverName, url, caPath)
 	// make  goroutine to send kpi and inventory data
 	for k := range Collector.Apm {
 		t := time.NewTicker(10 * time.Second)
@@ -47,7 +55,7 @@ func StartCollector() {
 }
 func init() {
 	Collector = Collect{
-		Apm: make(map[string]apm.APMI, 2),
+		Apm: make(map[string]apm.APM, 2),
 	}
 
 }

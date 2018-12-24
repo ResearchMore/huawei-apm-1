@@ -17,7 +17,7 @@ import (
 // DefaultKPIUrl default url send kpi Message to collector
 const DefaultKPIUrl = "/svcstg/ats/v1/%s/kpi/istio"
 
-// KpiApm implement APMI by forwarding kpi
+// KpiApm implement APM by forwarding kpi
 type KpiApm struct {
 	kpiMutex         *sync.Mutex
 	httpClient       *http.Client
@@ -55,7 +55,7 @@ func (k *KpiApm) Set(data interface{}) error {
 	return nil
 }
 
-// Send implement APMI send method , send kpi message to apm , when the kpi message failed to be send apm
+// Send implement APM send method , send kpi message to apm , when the kpi message failed to be send apm
 // will use cache to storing the kpi message , but the data will only send second time
 func (k *KpiApm) Send() error {
 	// if has old data sent the old data first and old data only send second time
@@ -171,6 +171,7 @@ func getTKpiMessage(c common.KPICollectorMessage) common.TKpiMessage {
 		DestTierName:      c.DestTierName,
 		TotalErrorLatency: totalErrorLatency,
 		TotalLatency:      totalLatency,
+		SpanType:          c.SpanType,
 	}
 }
 
@@ -191,9 +192,9 @@ func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
 	kpiUrl = utils.GetStringWithDefaultName(kpiUrl, DefaultKPIUrl)
 	caPath = utils.GetStringWithDefaultName(caPath, common.DefaultCAPath)
 
-	tlsConfig, err := utils.GetTLSConfig(caPath, "", "", "")
+	tlsConfig, err := utils.GetTLSConfig(caPath, "", "")
 	if err != nil {
-		openlogging.GetLogger().Error("get tls config failed")
+		openlogging.GetLogger().Errorf("apm kpi: get tls config failed,err[%s]", err)
 		return nil
 	}
 	return &KpiApm{

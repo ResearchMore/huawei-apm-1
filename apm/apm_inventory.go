@@ -130,6 +130,7 @@ func (k *InventoryApm) Get(key string) ([]common.Inventory, bool) {
 
 // NewInventoryApm return new InventoryApm
 func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
+
 	projectID, isExist := os.LookupEnv(common.EnvProjectID)
 	if !isExist {
 		projectID = common.DefaultProjectID
@@ -138,8 +139,9 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 	inventoryUrl = utils.GetStringWithDefaultName(inventoryUrl, DefaultInventoryUrl)
 	caPath = utils.GetStringWithDefaultName(caPath, common.DefaultCAPath)
 	serverName = utils.GetStringWithDefaultName(serverName, common.DefaultServerName)
-	tlsConfig, err := utils.GetTLSConfig(caPath, "", "", "")
+	tlsConfig, err := utils.GetTLSConfig(caPath, "", "")
 	if err != nil {
+		openlogging.GetLogger().Errorf("apm kpi: get tls config failed,err[%s]", err)
 		return nil
 	}
 	return &InventoryApm{

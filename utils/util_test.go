@@ -36,7 +36,7 @@ func TestGetTimeMillisecond(t *testing.T) {
 }
 
 func TestGetCertificate(t *testing.T) {
-	cs, err := GetTLSConfig("/test-ca/kubernetes", "", "", "")
+	cs, err := GetTLSConfig("/test-ca/kubernetes", "", "")
 	if err != nil {
 		openlogging.GetLogger().Error(err.Error())
 	}

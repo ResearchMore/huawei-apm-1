@@ -90,11 +90,12 @@ type Inventory struct {
 	// non-essential value
 	Ports interface{} `json:"ports"`
 	// non-essential value
-	IPs     interface{} `json:"ips"`
-	Tier    string      `json:"tier"`
-	Created int64       `json:"created"`
-	Updated int64       `json:"updated"`
-	Deleted int64       `json:"deleted"`
+	IPs           interface{} `json:"ips"`
+	Tier          string      `json:"tier"`
+	NamespaceName string      `json:"namespaceName"`
+	Created       int64       `json:"created"`
+	Updated       int64       `json:"updated"`
+	Deleted       int64       `json:"deleted"`
 }
 
 // KPICollectorMessage
@@ -109,4 +110,5 @@ type KPICollectorMessage struct {
 	TotalErrorLatency  int64
 	TotalLatencys      []int64
 	TotalLatency       int64
+	SpanType           spanType
 }

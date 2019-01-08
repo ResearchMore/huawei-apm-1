@@ -53,6 +53,7 @@ func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb
 	})
 
 	callbackFunc = func(response *invocation.Response, t time.Time) error {
+
 		var totalErrorLatency, totalLatency int64
 		if response.Err != nil {
 			totalErrorLatency = time.Since(t).Nanoseconds() / 1e6
@@ -71,13 +72,13 @@ func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb
 		}
 
 		kpiCollectorMessage := getKPIMessage(pod.GetPodName(), getDestResourceId(),
-			transactionType, runtime.App, runtime.ServiceName,
+			transactionType, runtime.ServiceName,
 			inv.MicroServiceName, totalLatency, totalErrorLatency)
 		kpi.CollectKpi(kpiCollectorMessage)
 
 		in := getInventoryMessage(runtime.HostName, utils.GetLocalIP(), runtime.App,
-			config.GlobalDefinition.Cse.Service.Registry.Type, "display_name",
-			runtime.InstanceID, pod.GetContainerID(), runtime.App, config.MicroserviceDefinition.ServiceDescription.Name, 0)
+			"servicemesh_displayName", runtime.InstanceID, pod.GetContainerID(),
+			inv.MicroServiceName, config.MicroserviceDefinition.ServiceDescription.Name, 0)
 
 		inventory.CollectInventory(in)
 		return cb(response)
@@ -88,42 +89,44 @@ func (a *APMHandler) Handle(chain *handler.Chain, inv *invocation.Invocation, cb
 
 // getKPIMessage get kpi message
 func getKPIMessage(sourceResourceID, destResourceID, transactionType,
-	appID, srcTierName, destTierName string,
+	srcTierName, destTierName string,
 	totalLatency, totalErrorLatency int64) common.KPICollectorMessage {
+	clusterKey := utils.GetClusterID()
 	return common.KPICollectorMessage{
 		SourceResourceId:  sourceResourceID,
 		DestResourceId:    destResourceID,
 		TransactionType:   transactionType,
-		AppId:             appID,
+		AppId:             clusterKey,
 		SrcTierName:       srcTierName,
 		DestTierName:      destTierName,
 		TotalLatency:      totalLatency,
 		TotalErrorLatency: totalErrorLatency,
-		SpanType:          common.INTERMEDIATE,
 	}
 }
 
 // getInventoryMessage return new inventory
-func getInventoryMessage(hostname, ip, appName, serviceType,
-	displayName, instanceName, containerID, appID, namespaceName string, pid int) common.Inventory {
-
-	return common.Inventory{
+func getInventoryMessage(hostname, ip, appName,
+	displayName, instanceName, containerID, tier, namespaceName string, pid int32) common.TDiscoveryInfo {
+	clusterKey := utils.GetClusterID()
+	projectID := utils.GetProjectID()
+	return common.TDiscoveryInfo{
+		CollectorId:   "servicemesh",
+		ProjectId:     projectID,
 		Hostname:      hostname,
 		IP:            ip,
-		AgentID:       "",
+		AgentId:       "servicemesh",
 		AppName:       appName,
-		ClusterKey:    "",
-		ServiceType:   serviceType,
+		ClusterKey:    clusterKey,
+		ServiceType:   "servicemesh",
 		DisplayName:   displayName,
 		InstanceName:  instanceName,
-		ContainerID:   containerID,
+		ContainerId:   containerID,
 		Pid:           pid,
-		AppID:         appID,
-		Ports:         "",
-		IPs:           "",
-		Tier:          "",
+		AppId:         clusterKey,
+		Tier:          tier,
 		NamespaceName: namespaceName,
 		Created:       utils.GetTimeMillisecond(),
+		Updated:       utils.GetTimeMillisecond(),
 	}
 }
 

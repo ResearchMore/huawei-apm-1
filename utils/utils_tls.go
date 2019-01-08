@@ -7,13 +7,14 @@ import (
 	"io/ioutil"
 
 	"github.com/go-chassis/go-chassis/security"
+	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-mesh/openlogging"
 )
 
 // GetTLSConfig  get https access  certificate config
 func GetTLSConfig(path, kubecrt, kubekey string) (*tls.Config, error) {
-	kubecrt = getFilePath(path, kubecrt, defaultK8sCrtFileName)
-	kubekey = getFilePath(path, kubekey, defaultK8sKeyFileName)
+	kubecrt = getFilePath(path, kubecrt, common.DefaultK8sCrtFileName)
+	kubekey = getFilePath(path, kubekey, common.DefaultK8sKeyFileName)
 
 	certificates, err := getCertificate(kubecrt, kubekey)
 	if err != nil {

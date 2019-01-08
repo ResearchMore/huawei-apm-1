@@ -5,6 +5,6 @@ import (
 	"github.com/go-chassis/huawei-apm/common"
 )
 
-func CollectInventory(inventory common.Inventory) error {
+func CollectInventory(inventory common.TDiscoveryInfo) error {
 	return apm_collector.Collector.Apm[apm_collector.Inventory_Collector_Key].Set(inventory)
 }

@@ -1,17 +1,12 @@
 package apm
 
 import (
-	"encoding/json"
-
-	"net/http"
-
-	"os"
-
 	"errors"
-
+	"net/http"
 	"sync"
-
 	"time"
+
+	"fmt"
 
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-chassis/huawei-apm/utils"
@@ -39,11 +34,11 @@ type InventoryApm struct {
 }
 
 func (i *InventoryApm) Set(data interface{}) error {
-	in, ok := data.(common.Inventory)
+	in, ok := data.(common.TDiscoveryInfo)
 	if !ok {
 		return InventoryNotMatchError
 	}
-	var inventories []common.Inventory
+	var inventories []common.TDiscoveryInfo
 	iCache, ok := i.Get(InventoryCacheKey)
 	if ok {
 		inventories = iCache
@@ -72,18 +67,19 @@ func (i *InventoryApm) Send() error {
 	i.mutexInventory.Unlock()
 
 	if !ok {
-		//openlogging.GetLogger().Warn("not data need to send apm")
 		return errors.New("not data need to send apm")
 	}
 	for _, v := range inventories {
-		temp, _ := json.Marshal(v)
+		fmt.Printf("====inventories %+v\n", v)
+		temp, _ := utils.Serialize(&v)
+		fmt.Printf("====inventories %+v\n", string(temp))
 		datas = append(datas, temp)
 	}
 	if len(datas) == 0 {
 		openlogging.GetLogger().Warn("not data need to send apm")
 		return errors.New("not data need to send apm")
 	}
-	i.KeyString = utils.GetAPMKey("istio", i.ProjectID, "default", "cse", i.ServerName)
+	i.KeyString = " | "
 	i.KeyInt64 = utils.GetTimeMillisecond() - 60*1000
 	tAgentMessage := &common.TAgentMessage{
 		AgentContext: utils.UUID16(),
@@ -119,22 +115,18 @@ func (i *InventoryApm) GetAgentCache() *common.TAgentMessage {
 }
 
 // Get get tKpiMessage from cache
-func (k *InventoryApm) Get(key string) ([]common.Inventory, bool) {
+func (k *InventoryApm) Get(key string) ([]common.TDiscoveryInfo, bool) {
 	d, ok := k.inventoryCache.Get(key)
 	if !ok {
 		return nil, false
 	}
-	message, ok := d.([]common.Inventory)
+	message, ok := d.([]common.TDiscoveryInfo)
 	return message, ok
 }
 
 // NewInventoryApm return new InventoryApm
-func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
-
-	projectID, isExist := os.LookupEnv(common.EnvProjectID)
-	if !isExist {
-		projectID = common.DefaultProjectID
-	}
+func NewInventoryApm(serverName, inventoryUrl, caPath string) (*InventoryApm, error) {
+	projectID := utils.GetProjectID()
 
 	inventoryUrl = utils.GetStringWithDefaultName(inventoryUrl, DefaultInventoryUrl)
 	caPath = utils.GetStringWithDefaultName(caPath, common.DefaultCAPath)
@@ -142,7 +134,7 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 	tlsConfig, err := utils.GetTLSConfig(caPath, "", "")
 	if err != nil {
 		openlogging.GetLogger().Errorf("apm kpi: get tls config failed,err[%s]", err)
-		return nil
+		return nil, err
 	}
 	return &InventoryApm{
 		ServerName:     serverName,
@@ -157,5 +149,5 @@ func NewInventoryApm(serverName, inventoryUrl, caPath string) *InventoryApm {
 				TLSClientConfig: tlsConfig,
 			},
 		},
-	}
+	}, nil
 }

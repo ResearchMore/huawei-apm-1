@@ -2,6 +2,7 @@
 package utils
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
 	"io"
@@ -11,15 +12,10 @@ import (
 	"strings"
 	"time"
 
+	"git.apache.org/thrift.git/lib/go/thrift"
 	"github.com/go-chassis/huawei-apm/common"
 	"github.com/go-mesh/openlogging"
 )
-
-const defaultCACrtFileName string = "ca.crt"
-
-const defaultK8sCrtFileName string = "kubecfg.crt"
-
-const defaultK8sKeyFileName string = "kubecfg_crypto.key"
 
 // EncryptionMD5 return md5ed string
 func EncryptionMD5(str string) string {
@@ -64,9 +60,41 @@ func GetHostname() string {
 	return hostname
 }
 
+// GetClusterID
+func GetClusterID() string {
+	clusterID, isExist := os.LookupEnv(common.DefaultClusterKey)
+
+	if !isExist {
+		clusterID = common.DefaultCluster
+	}
+	return clusterID
+}
+
+// GetElbIP
+func GetElbIP() string {
+	elbIP, isExist := os.LookupEnv(common.DefaultElbIP)
+	if !isExist {
+		elbIP = "127.0.0.1"
+	}
+	if strings.HasPrefix(elbIP, "https://") || strings.HasPrefix(elbIP, "http://") {
+		return elbIP
+	}
+
+	return fmt.Sprintf("https://%s", elbIP)
+}
+
+// GetProjectID
+func GetProjectID() string {
+
+	projectID, isExist := os.LookupEnv(common.EnvProjectID)
+	if !isExist {
+		projectID = common.DefaultProjectID
+	}
+	return projectID
+}
+
 //GetLocalIP get host ip
 func GetLocalIP() string {
-
 	addresses, err := net.InterfaceAddrs()
 	if err != nil {
 		return ""
@@ -104,4 +132,16 @@ func GetStringWithDefaultName(filename, defaultName string) string {
 		return defaultName
 	}
 	return filename
+}
+
+// Serialize serialize message
+func Serialize(message thrift.TStruct) ([]byte, error) {
+	// convert to thrift
+	memoryBuffer := thrift.NewTMemoryBuffer()
+	protocol := thrift.NewTCompactProtocolFactory().GetProtocol(memoryBuffer)
+	serializer := thrift.TSerializer{Transport: memoryBuffer, Protocol: protocol}
+
+	bytes, err := serializer.Write(context.Background(), message)
+
+	return bytes, err
 }

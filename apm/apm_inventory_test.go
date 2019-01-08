@@ -11,20 +11,20 @@ import (
 
 var inventoryApm *InventoryApm
 
-var inventories []common.Inventory
+var inventories []common.TDiscoveryInfo
 
 func init() {
 	inventoryApm = NewInventoryApm("", "", "")
-	inventories = []common.Inventory{
+	inventories = []common.TDiscoveryInfo{
 		{
 			Hostname:     "apm_hostname_01",
 			IP:           "127.0.0.1",
-			AppID:        "apm_appID_01",
+			AppId:        "apm_appID_01",
 			AppName:      "apm_appName_01",
 			ServiceType:  "apm_serviceType_01",
 			DisplayName:  "apm_displayName_01",
 			InstanceName: "apm_instanceName_01",
-			ContainerID:  "apm_containerID_01",
+			ContainerId:  "apm_containerID_01",
 			Pid:          0,
 			Props:        nil,
 			Created:      utils.GetTimeMillisecond(),
@@ -32,12 +32,12 @@ func init() {
 		{
 			Hostname:     "apm_hostname_02",
 			IP:           "127.0.0.1",
-			AppID:        "apm_appID_02",
+			AppId:        "apm_appID_02",
 			AppName:      "apm_appName_0",
 			ServiceType:  "apm_serviceType_0",
 			DisplayName:  "apm_displayName_02",
 			InstanceName: "apm_instanceName_02",
-			ContainerID:  "apm_containerID_02",
+			ContainerId:  "apm_containerID_02",
 			Pid:          1,
 			Props:        nil,
 			Created:      utils.GetTimeMillisecond(),

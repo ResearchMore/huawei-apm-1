@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
 	"sync"
 
 	"github.com/go-chassis/huawei-apm/common"
@@ -82,7 +81,9 @@ func (k *KpiApm) Send() error {
 	for _, v := range items {
 		c := v.Object.(common.KPICollectorMessage)
 		tKpiMessage := getTKpiMessage(c)
-		d, _ := json.Marshal(tKpiMessage)
+		fmt.Printf("=====>tKpiMessage %+v\n", tKpiMessage)
+		d, _ := utils.Serialize(&tKpiMessage)
+		fmt.Printf("=====>tKpiMessage %+v\n", string(d))
 		kpiMessageBytes = append(kpiMessageBytes, d)
 	}
 
@@ -91,7 +92,7 @@ func (k *KpiApm) Send() error {
 		return errors.New(fmt.Sprintf("not kpi message need to send in cache , cache num is : %d", len(items)))
 	}
 
-	key := utils.GetAPMKey("istio", k.ProjectID, "default", "cse", k.ServerName)
+	key := " | "
 	int64Key := utils.GetTimeMillisecond() - 60*1000
 
 	tAgentMessage := &common.TAgentMessage{
@@ -106,6 +107,7 @@ func (k *KpiApm) Send() error {
 	// send data to apm
 	err := httpDo(k.httpClient, tAgentMessage, k.Url, k.ProjectID)
 	if err != nil {
+		openlogging.GetLogger().Errorf("send data to apm kpi failed: ,error : [%v]", err)
 		k.setToAgentMessage(tAgentMessage)
 	}
 	return err
@@ -163,15 +165,14 @@ func getTKpiMessage(c common.KPICollectorMessage) common.TKpiMessage {
 		totalErrorLatency, _ = json.Marshal(c.TotalErrorLatencys)
 	}
 	return common.TKpiMessage{
-		SourceResourceId:  c.SourceResourceId,
-		DestResourceId:    c.DestResourceId,
+		Throughput:        int32(len(c.TotalLatencys) + len(c.TotalErrorLatencys)),
+		SourceResouceId:   c.SourceResourceId,
+		DestResouceId:     c.DestResourceId,
 		TransactionType:   c.TransactionType,
 		AppId:             c.AppId,
-		SrcTierName:       c.SrcTierName,
-		DestTierName:      c.DestTierName,
 		TotalErrorLatency: totalErrorLatency,
 		TotalLatency:      totalLatency,
-		SpanType:          c.SpanType,
+		NamespaceName:     c.SrcTierName,
 	}
 }
 
@@ -181,12 +182,9 @@ func initCache() *cache.Cache { return cache.New(common.DefaultExpireTime, commo
 // NewKpiAPM return new KpiAPM with projectID , server name , KpiUrl , caPath
 // when input params is empty will use default value.
 // e.g. projectID is empty , use default value is "default" , more default please see system const
-func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
+func NewKpiAPM(serverName, kpiUrl, caPath string) (*KpiApm, error) {
 
-	projectID, isExist := os.LookupEnv(common.EnvProjectID)
-	if !isExist {
-		projectID = common.DefaultProjectID
-	}
+	projectID := utils.GetProjectID()
 
 	serverName = utils.GetStringWithDefaultName(serverName, common.DefaultServerName)
 	kpiUrl = utils.GetStringWithDefaultName(kpiUrl, DefaultKPIUrl)
@@ -195,7 +193,7 @@ func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
 	tlsConfig, err := utils.GetTLSConfig(caPath, "", "")
 	if err != nil {
 		openlogging.GetLogger().Errorf("apm kpi: get tls config failed,err[%s]", err)
-		return nil
+		return nil, err
 	}
 	return &KpiApm{
 		ProjectID:        projectID,
@@ -209,7 +207,7 @@ func NewKpiAPM(serverName, kpiUrl, caPath string) *KpiApm {
 				TLSClientConfig: tlsConfig,
 			},
 		},
-	}
+	}, nil
 }
 
 // getKpiCacheKey get kpi apmcache key use source name , dest name , TransactionType

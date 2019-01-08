@@ -7,8 +7,14 @@ const (
 	APMKeySeparator = "|"
 )
 const (
-	DefaultCAPath    = "/var/paas/srv/kubernetes"
-	DefaultBatchTime = 60 * time.Second
+	DefaultK8sCrtFileName = "kubecfg.crt"
+	DefaultK8sKeyFileName = "kubecfg_crypto.key"
+	DefaultCAPath         = "/var/paas/srv/kubernetes"
+	DefaultClusterKey     = "CLUSTER_KEY_MESHER_APM"
+	DefaultElbIP          = "ELBURL_MESHER_APM"
+)
+const (
+	DefaultBatchTime = 5 * time.Second
 	DefaultProjectID = "default"
 	//DefaultExpireTime default expiry time is kept as 0
 	DefaultExpireTime = 0
@@ -17,8 +23,8 @@ const (
 
 	DefaultClient       = "unknownClient"
 	DefaultSDestination = "unknownDestination"
-
-	DefaultServerName = "default"
+	DefaultCluster      = "default"
+	DefaultServerName   = "default"
 	// need to secondary transmission
 	SecondarySend = "SecondarySend"
 	EnvProjectID  = "CSE_PROJECT_ID"
